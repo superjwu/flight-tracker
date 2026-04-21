@@ -39,10 +39,10 @@ cp apps/worker/.env.example apps/worker/.env
 #    supabase/migrations/0003_rls.sql
 #    supabase/migrations/0004_realtime.sql
 
-# 4) Clerk → Dashboard → JWT Templates → new template named "supabase"
-#    Signing algorithm: HS256
-#    Signing key: your Supabase JWT secret (Project Settings → API)
-#    Claims: leave default (Clerk sub claim is what we need)
+# 4) Wire Clerk as a Supabase third-party auth provider:
+#    Supabase Dashboard → Authentication → Sign In / Providers → Third-Party Auth
+#      → Add provider → Clerk → paste your Clerk Frontend API URL (clerk.<your-domain>.com)
+#    No JWT secret needed — Supabase verifies Clerk tokens via Clerk's JWKS.
 
 # 5) run the worker (populates aircraft_states)
 npm run dev:worker

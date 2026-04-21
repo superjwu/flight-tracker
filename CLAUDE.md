@@ -44,7 +44,7 @@ npm workspaces. Root scripts: `dev:web`, `dev:worker`, `build`, `typecheck`.
 - **Clerk** signs users in. `ClerkProvider` wraps the app in `apps/web/app/layout.tsx`.
 - `apps/web/middleware.ts` protects `/favorites`, `/alerts`, and authenticated API routes.
 - `apps/web/app/api/clerk-webhook/route.ts` consumes `user.created` / `user.updated` / `user.deleted` and upserts into Supabase `users` using the service role.
-- Browser Supabase client (`apps/web/lib/supabase-browser.ts`) uses a Clerk JWT template named **`supabase`** that is configured (in Clerk Dashboard) to sign with the Supabase JWT secret. Each request sends `Authorization: Bearer <token>`; Postgres RLS reads `auth.jwt() ->> 'sub'` to identify the Clerk user.
+- Browser Supabase client (`apps/web/lib/supabase-browser.ts`) uses Clerk as a **third-party auth provider**. Supabase verifies Clerk-issued JWTs via Clerk's JWKS endpoint — no shared JWT secret. The `accessToken` callback hands Supabase a fresh Clerk session token per request; Postgres RLS reads `auth.jwt() ->> 'sub'` to identify the Clerk user.
 - RLS policies (`supabase/migrations/0003_rls.sql`) restrict `favorite_flights`, `favorite_airlines`, `saved_views`, `alert_rules`, and `alert_events` to the current user via `current_user_row_id()`.
 - Public tables `aircraft_states` and `aircraft_positions` have a `select using (true)` policy — signed-out users can see the live map.
 

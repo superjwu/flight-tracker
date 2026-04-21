@@ -7,31 +7,29 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /**
- * Supabase browser client that uses the Clerk session token (JWT template "supabase")
- * so Row Level Security policies can read `auth.jwt() ->> 'sub'` as the Clerk user id.
+ * Supabase browser client using Clerk as a third-party auth provider.
  *
- * If the user is signed out, the client falls back to the anon key — which is fine
- * for the public aircraft_states / aircraft_positions tables.
+ * Supabase is configured (dashboard → Authentication → Third-Party Auth → Clerk)
+ * to accept Clerk-issued JWTs verified against Clerk's JWKS endpoint — no shared
+ * secret needed. The `accessToken` callback below hands Supabase a fresh Clerk
+ * session token on every request; RLS policies read `auth.jwt() ->> 'sub'` to
+ * resolve the Clerk user.
+ *
+ * Signed-out users still get the anon key (accessToken returns null), which is
+ * fine for the publicly-readable aircraft_states / aircraft_positions tables.
  */
 export function useSupabase(): SupabaseClient {
   const { getToken, isSignedIn } = useAuth();
 
   return useMemo(() => {
     return createClient(url, anonKey, {
-      global: {
-        fetch: async (input, init) => {
-          const headers = new Headers(init?.headers);
-          if (isSignedIn) {
-            const token = await getToken({ template: "supabase" });
-            if (token) headers.set("Authorization", `Bearer ${token}`);
-          }
-          return fetch(input, { ...init, headers });
-        },
+      async accessToken() {
+        if (!isSignedIn) return null;
+        return (await getToken()) ?? null;
       },
       auth: { persistSession: false, autoRefreshToken: false },
       realtime: { params: { eventsPerSecond: 20 } },
     });
-    // intentionally only depend on isSignedIn — getToken is stable per session
   }, [isSignedIn, getToken]);
 }
 
