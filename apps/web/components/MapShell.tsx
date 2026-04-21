@@ -8,6 +8,7 @@ import { REGION_BBOXES } from "@flight-tracker/shared";
 import FilterBar from "./FilterBar";
 import FlightDetailPanel from "./FlightDetailPanel";
 import SaveViewButton from "./SaveViewButton";
+import SearchBox, { type SearchHit } from "./SearchBox";
 import StatsBar from "./StatsBar";
 
 const LiveMap = dynamic(() => import("./LiveMap"), { ssr: false });
@@ -28,6 +29,27 @@ export default function MapShell() {
   const [visibleCount, setVisibleCount] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const bboxGetterRef = useRef<(() => Bbox | null) | null>(null);
+  const flyToRef = useRef<((lon: number, lat: number, zoom?: number) => void) | null>(null);
+
+  function handleSearchPick(hit: SearchHit) {
+    if (hit.longitude == null || hit.latitude == null) return;
+    // Fly the map to this plane, then open its detail panel.
+    flyToRef.current?.(hit.longitude, hit.latitude, 8);
+    setSelected({
+      icao24: hit.icao24,
+      callsign: hit.callsign,
+      origin_country: hit.origin_country,
+      longitude: hit.longitude,
+      latitude: hit.latitude,
+      altitude_m: hit.altitude_m,
+      velocity_ms: null,
+      heading_deg: null,
+      vertical_rate: null,
+      on_ground: hit.on_ground,
+      squawk: null,
+      last_contact: new Date().toISOString(),
+    });
+  }
 
   const initialBbox = REGION_BBOXES[filters.region];
 
@@ -45,6 +67,7 @@ export default function MapShell() {
             </span>
             <span className="text-white">FLIGHT_TRACKER</span>
           </Link>
+          <SearchBox onPick={handleSearchPick} />
         </div>
         <nav className="flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/90 px-2 py-1.5 text-sm shadow-xl shadow-black/40 ring-1 ring-inset ring-white/5 pointer-events-auto">
           <SignedIn>
@@ -80,6 +103,7 @@ export default function MapShell() {
           onVisibleCountChange={setVisibleCount}
           onLastUpdateChange={setLastUpdate}
           registerBboxGetter={(fn) => { bboxGetterRef.current = fn; }}
+          registerFlyTo={(fn) => { flyToRef.current = fn; }}
         />
       </div>
 

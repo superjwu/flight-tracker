@@ -15,6 +15,7 @@ type Props = {
   onVisibleCountChange: (n: number) => void;
   onLastUpdateChange: (ts: number) => void;
   registerBboxGetter?: (fn: () => Bbox | null) => void;
+  registerFlyTo?: (fn: (lon: number, lat: number, zoom?: number) => void) => void;
 };
 
 const MIN_RELOAD_INTERVAL_MS = 1500;
@@ -27,6 +28,7 @@ export default function LiveMap({
   onVisibleCountChange,
   onLastUpdateChange,
   registerBboxGetter,
+  registerFlyTo,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MLMap | null>(null);
@@ -36,6 +38,7 @@ export default function LiveMap({
   const { favoriteCallsigns, favoriteAirlines } = useFavorites();
   const [ready, setReady] = useState(false);
   const reloadBucketRef = useRef(0);
+  const loadSnapshotRef = useRef<() => Promise<void>>(async () => {});
 
   // Keep a stable reference to latest filters and favorites so marker logic reads current values.
   const filtersRef = useRef(filters);
@@ -83,6 +86,17 @@ export default function LiveMap({
       });
     }
 
+    if (registerFlyTo) {
+      registerFlyTo((lon, lat, zoom = 8) => {
+        map.flyTo({ center: [lon, lat], zoom, duration: 1400, essential: true });
+        // Trigger a re-fetch after fly completes so markers populate around the destination.
+        setTimeout(() => {
+          reloadBucketRef.current = Date.now();
+          loadSnapshotRef.current();
+        }, 1500);
+      });
+    }
+
     return () => {
       map.remove();
       mapRef.current = null;
@@ -92,18 +106,24 @@ export default function LiveMap({
     // only init once
   }, [initialCenter]);
 
-  // Pan to region when filter changes (but don't re-create the map).
+  // Pan to region when filter changes and force a re-fetch when pan completes
+  // (moveend throttle could otherwise skip the reload and leave the map empty).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !ready) return;
     map.fitBounds(
       [
         [initialBbox.minLon, initialBbox.minLat],
         [initialBbox.maxLon, initialBbox.maxLat],
       ],
-      { padding: 40, duration: 600, maxZoom: 6 }
+      { padding: 40, duration: 700, maxZoom: 6 }
     );
-  }, [initialBbox]);
+    const t = setTimeout(() => {
+      reloadBucketRef.current = Date.now();
+      loadSnapshotRef.current();
+    }, 800);
+    return () => clearTimeout(t);
+  }, [initialBbox, ready]);
 
   // Fetch + realtime subscription scoped to current viewport bbox.
   useEffect(() => {
@@ -126,21 +146,30 @@ export default function LiveMap({
 
     const loadSnapshot = async () => {
       const bbox = getViewportBbox();
-      const { data, error } = await supabase
-        .from("aircraft_states")
-        .select("*")
-        .gte("longitude", bbox.minLon)
-        .lte("longitude", bbox.maxLon)
-        .gte("latitude", bbox.minLat)
-        .lte("latitude", bbox.maxLat)
-        .limit(5000);
+      // RPC samples with order-by-random so world view doesn't collapse to NA
+      // (default api row cap returns first 1000 by icao24 PK = US-registered).
+      const { data, error } = await supabase.rpc("sample_aircraft_in_bbox", {
+        p_min_lon: bbox.minLon,
+        p_min_lat: bbox.minLat,
+        p_max_lon: bbox.maxLon,
+        p_max_lat: bbox.maxLat,
+        p_limit: 2000,
+      });
       if (error || cancelled) return;
       const next = new Map<string, AircraftState>();
-      for (const row of data as AircraftState[]) next.set(row.icao24, row);
+      for (const row of (data ?? []) as AircraftState[]) next.set(row.icao24, row);
       statesRef.current = next;
+      // Clear markers not in the new snapshot (pre-empt realtime removal race)
+      for (const [icao, marker] of markersRef.current) {
+        if (!next.has(icao)) {
+          marker.remove();
+          markersRef.current.delete(icao);
+        }
+      }
       renderAll();
       onLastUpdateChange(Date.now());
     };
+    loadSnapshotRef.current = loadSnapshot;
 
     const subscribe = () => {
       if (channel) supabase.removeChannel(channel);
@@ -160,17 +189,11 @@ export default function LiveMap({
             }
             const row = payload.new as AircraftState;
             if (!row || row.latitude == null || row.longitude == null) return;
-            const bbox = getViewportBbox();
-            const inView =
-              row.longitude >= bbox.minLon &&
-              row.longitude <= bbox.maxLon &&
-              row.latitude >= bbox.minLat &&
-              row.latitude <= bbox.maxLat;
-            if (!inView) {
-              statesRef.current.delete(row.icao24);
-              removeMarker(row.icao24);
-              return;
-            }
+            // Only update markers that are already rendered (part of the current snapshot).
+            // Don't add or remove on realtime events — the snapshot fetch is the source of
+            // truth for which planes are visible. This avoids a race where rapid worker
+            // polls delete out-of-viewport markers before the new snapshot lands.
+            if (!statesRef.current.has(row.icao24)) return;
             statesRef.current.set(row.icao24, row);
             upsertMarker(row);
             onLastUpdateChange(Date.now());

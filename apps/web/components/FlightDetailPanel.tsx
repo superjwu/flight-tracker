@@ -54,6 +54,14 @@ export default function FlightDetailPanel({
   const depInfo = route?.depInfo ?? (route?.dep ? lookupAirport(route.dep) : null);
   const arrInfo = route?.arrInfo ?? (route?.arr ? lookupAirport(route.arr) : null);
 
+  // Duration tracked: gap between oldest trail point we have and now.
+  // Note this reflects our observation window (trails pruned after 1h), not
+  // actual flight duration — but it's the best we have without schedule data.
+  const trackedMs =
+    trail.length > 0
+      ? Date.now() - new Date(trail[0]!.observed_at).getTime()
+      : null;
+
   // Reset when a new aircraft is selected.
   useEffect(() => {
     setLiveAircraft(aircraft);
@@ -170,10 +178,12 @@ export default function FlightDetailPanel({
             <Stat label="Speed" value={fmtSpeed(liveAircraft.velocity_ms)} highlight />
             <Stat label="Heading" value={fmtHeading(liveAircraft.heading_deg)} />
             <Stat label="Vert rate" value={fmtVert(liveAircraft.vertical_rate)} />
+            <Stat label="Tracked" value={fmtDuration(trackedMs)} />
+            <Stat label="Status" value={liveAircraft.on_ground ? "On ground" : "Airborne"} />
             <Stat label="Country" value={liveAircraft.origin_country || "—"} />
-            <Stat label="Ground" value={liveAircraft.on_ground ? "Yes" : "No"} />
             <Stat label="Squawk" value={liveAircraft.squawk || "—"} mono />
             <Stat label="ICAO24" value={liveAircraft.icao24} mono />
+            <Stat label="Last seen" value={fmtLastContact(liveAircraft.last_contact)} />
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <Stat label="Latitude" value={fmtCoord(liveAircraft.latitude)} mono />
@@ -434,4 +444,24 @@ function fmtTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+function fmtDuration(ms: number | null): string {
+  if (ms == null || ms < 0) return "—";
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+function fmtLastContact(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return "just now";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
 }
