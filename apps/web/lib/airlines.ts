@@ -1,0 +1,97 @@
+/**
+ * ICAO → airline name lookup. Covers the most common ~120 airlines that
+ * dominate global ADS-B traffic. Unknown prefixes fall back to the raw code.
+ */
+export const AIRLINES: Record<string, { name: string; country?: string }> = {
+  AAL: { name: "American Airlines", country: "US" },
+  UAL: { name: "United Airlines", country: "US" },
+  DAL: { name: "Delta Air Lines", country: "US" },
+  SWA: { name: "Southwest Airlines", country: "US" },
+  JBU: { name: "JetBlue", country: "US" },
+  ASA: { name: "Alaska Airlines", country: "US" },
+  FFT: { name: "Frontier", country: "US" },
+  NKS: { name: "Spirit", country: "US" },
+  SKW: { name: "SkyWest", country: "US" },
+  RPA: { name: "Republic Airways", country: "US" },
+  EDV: { name: "Endeavor Air", country: "US" },
+  ENY: { name: "Envoy Air", country: "US" },
+  ACA: { name: "Air Canada", country: "CA" },
+  WJA: { name: "WestJet", country: "CA" },
+  BAW: { name: "British Airways", country: "GB" },
+  VIR: { name: "Virgin Atlantic", country: "GB" },
+  EZY: { name: "easyJet", country: "GB" },
+  RYR: { name: "Ryanair", country: "IE" },
+  DLH: { name: "Lufthansa", country: "DE" },
+  AFR: { name: "Air France", country: "FR" },
+  KLM: { name: "KLM", country: "NL" },
+  IBE: { name: "Iberia", country: "ES" },
+  SAS: { name: "SAS", country: "SE" },
+  FIN: { name: "Finnair", country: "FI" },
+  SWR: { name: "Swiss", country: "CH" },
+  AUA: { name: "Austrian", country: "AT" },
+  TAP: { name: "TAP Air Portugal", country: "PT" },
+  THY: { name: "Turkish Airlines", country: "TR" },
+  AEE: { name: "Aegean Airlines", country: "GR" },
+  AZA: { name: "ITA Airways", country: "IT" },
+  LOT: { name: "LOT Polish", country: "PL" },
+  WZZ: { name: "Wizz Air", country: "HU" },
+  AFL: { name: "Aeroflot", country: "RU" },
+  SBI: { name: "S7 Airlines", country: "RU" },
+  UAE: { name: "Emirates", country: "AE" },
+  ETD: { name: "Etihad", country: "AE" },
+  QTR: { name: "Qatar Airways", country: "QA" },
+  SVA: { name: "Saudia", country: "SA" },
+  ELY: { name: "El Al", country: "IL" },
+  MSR: { name: "EgyptAir", country: "EG" },
+  ETH: { name: "Ethiopian", country: "ET" },
+  KQA: { name: "Kenya Airways", country: "KE" },
+  SAA: { name: "South African Airways", country: "ZA" },
+  MAS: { name: "Malaysia Airlines", country: "MY" },
+  SIA: { name: "Singapore Airlines", country: "SG" },
+  THA: { name: "Thai Airways", country: "TH" },
+  CPA: { name: "Cathay Pacific", country: "HK" },
+  CAL: { name: "China Airlines", country: "TW" },
+  EVA: { name: "EVA Air", country: "TW" },
+  JAL: { name: "Japan Airlines", country: "JP" },
+  ANA: { name: "All Nippon", country: "JP" },
+  KAL: { name: "Korean Air", country: "KR" },
+  AAR: { name: "Asiana", country: "KR" },
+  CCA: { name: "Air China", country: "CN" },
+  CES: { name: "China Eastern", country: "CN" },
+  CSN: { name: "China Southern", country: "CN" },
+  HDA: { name: "Hong Kong Dragon", country: "HK" },
+  AIC: { name: "Air India", country: "IN" },
+  IGO: { name: "IndiGo", country: "IN" },
+  SEJ: { name: "SpiceJet", country: "IN" },
+  QFA: { name: "Qantas", country: "AU" },
+  VOZ: { name: "Virgin Australia", country: "AU" },
+  JST: { name: "Jetstar", country: "AU" },
+  ANZ: { name: "Air New Zealand", country: "NZ" },
+  LAN: { name: "LATAM", country: "CL" },
+  AVA: { name: "Avianca", country: "CO" },
+  AMX: { name: "Aeroméxico", country: "MX" },
+  VOI: { name: "Volaris", country: "MX" },
+  AZU: { name: "Azul", country: "BR" },
+  GLO: { name: "GOL", country: "BR" },
+  ARG: { name: "Aerolíneas Argentinas", country: "AR" },
+  FDX: { name: "FedEx", country: "US" },
+  UPS: { name: "UPS Airlines", country: "US" },
+  ATN: { name: "Air Transport Intl", country: "US" },
+  ABX: { name: "ABX Air", country: "US" },
+  GTI: { name: "Atlas Air", country: "US" },
+  CLX: { name: "Cargolux", country: "LU" },
+  CKS: { name: "Kalitta Air", country: "US" },
+  DHX: { name: "DHL Air UK", country: "GB" },
+};
+
+export function lookupAirline(callsign: string | null | undefined): {
+  code: string;
+  name: string;
+  country?: string;
+} | null {
+  if (!callsign) return null;
+  const code = callsign.trim().slice(0, 3).toUpperCase();
+  if (code.length !== 3 || !/^[A-Z]{3}$/.test(code)) return null;
+  const entry = AIRLINES[code];
+  return entry ? { code, ...entry } : { code, name: code };
+}
