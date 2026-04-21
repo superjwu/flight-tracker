@@ -1,6 +1,6 @@
 import { env } from "./env.js";
 import { fetchOpenSkyStates } from "./opensky.js";
-import { appendPositions, cleanupStale, upsertStates } from "./writer.js";
+import { cleanupStale, upsertStates } from "./writer.js";
 
 let tickCount = 0;
 let consecutiveFailures = 0;
@@ -12,12 +12,7 @@ async function tick() {
     const states = await fetchOpenSkyStates();
     const wrote = await upsertStates(states);
 
-    let trailAppended = 0;
-    if (tickCount % env.POSITION_SAMPLE_EVERY === 0) {
-      trailAppended = await appendPositions(states);
-    }
-
-    let cleaned: { positions: number; states: number } | null = null;
+    let cleaned: { states: number } | null = null;
     if (tickCount % env.CLEANUP_EVERY === 0) {
       cleaned = await cleanupStale();
     }
@@ -25,10 +20,7 @@ async function tick() {
     const ms = Date.now() - started;
     console.log(
       `[tick ${tickCount}] ${ms}ms | fetched=${states.length} wrote=${wrote}` +
-        (trailAppended ? ` trail=${trailAppended}` : "") +
-        (cleaned
-          ? ` cleaned=${cleaned.positions}p/${cleaned.states}s`
-          : "")
+        (cleaned ? ` cleaned=${cleaned.states}s` : "")
     );
     consecutiveFailures = 0;
   } catch (err) {
@@ -47,7 +39,6 @@ async function tick() {
 function scheduleNext(delay: number) {
   setTimeout(async () => {
     await tick();
-    // Adaptive backoff on persistent failure.
     const next = consecutiveFailures > 0
       ? Math.min(env.POLL_INTERVAL_MS * Math.pow(2, consecutiveFailures), 120_000)
       : env.POLL_INTERVAL_MS;
@@ -57,7 +48,7 @@ function scheduleNext(delay: number) {
 
 console.log(
   `flight-tracker worker starting | interval=${env.POLL_INTERVAL_MS}ms ` +
-    `sampleEvery=${env.POSITION_SAMPLE_EVERY} cleanupEvery=${env.CLEANUP_EVERY}`
+    `cleanupEvery=${env.CLEANUP_EVERY}`
 );
 
 scheduleNext(0);

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
-import type { AircraftPosition, AircraftState } from "@flight-tracker/shared";
+import type { AircraftState } from "@flight-tracker/shared";
 import { useSupabase } from "@/lib/supabase-browser";
 import { useFavorites } from "@/lib/favorites-context";
 import { lookupAirline } from "@/lib/airlines";
@@ -40,7 +40,7 @@ export default function FlightDetailPanel({
 
   // Live state is refreshed from aircraft_states every 10s (worker poll cadence).
   const [liveAircraft, setLiveAircraft] = useState<AircraftState>(aircraft);
-  const [trail, setTrail] = useState<AircraftPosition[]>([]);
+  const [firstSeenAt] = useState<number>(() => Date.now());
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [routeLoading, setRouteLoading] = useState(true);
 
@@ -54,49 +54,55 @@ export default function FlightDetailPanel({
   const depInfo = route?.depInfo ?? (route?.dep ? lookupAirport(route.dep) : null);
   const arrInfo = route?.arrInfo ?? (route?.arr ? lookupAirport(route.arr) : null);
 
-  // Duration tracked: gap between oldest trail point we have and now.
-  // Note this reflects our observation window (trails pruned after 1h), not
-  // actual flight duration — but it's the best we have without schedule data.
-  const trackedMs =
-    trail.length > 0
-      ? Date.now() - new Date(trail[0]!.observed_at).getTime()
-      : null;
+  // "Tracked" = seconds since the panel opened (real-time counter, no trail storage).
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const trackedMs = now - firstSeenAt;
 
   // Reset when a new aircraft is selected.
   useEffect(() => {
     setLiveAircraft(aircraft);
   }, [aircraft.icao24]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh live stats every 10s by re-querying aircraft_states.
+  // Live stats update two ways:
+  //   1) Immediate hydrate from aircraft_states on open.
+  //   2) Subscribe to realtime UPDATE events for this specific icao24 — stats
+  //      refresh the moment the worker writes new data (no polling delay).
   useEffect(() => {
     let cancelled = false;
-    const refresh = async () => {
+    (async () => {
       const { data } = await supabase
         .from("aircraft_states")
         .select("*")
         .eq("icao24", aircraft.icao24)
         .maybeSingle();
       if (!cancelled && data) setLiveAircraft(data as AircraftState);
-    };
-    refresh();
-    const id = setInterval(refresh, 10_000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [aircraft.icao24, supabase]);
-
-  // Fetch recent trail for the altitude chart.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("aircraft_positions")
-        .select("icao24,longitude,latitude,altitude_m,observed_at")
-        .eq("icao24", aircraft.icao24)
-        .order("observed_at", { ascending: false })
-        .limit(120);
-      if (cancelled) return;
-      setTrail((data ?? []).reverse() as AircraftPosition[]);
     })();
-    return () => { cancelled = true; };
+
+    const channel = supabase
+      .channel(`aircraft-detail-${aircraft.icao24}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "aircraft_states",
+          filter: `icao24=eq.${aircraft.icao24}`,
+        },
+        (payload) => {
+          const row = payload.new as AircraftState;
+          if (row && row.icao24 === aircraft.icao24) setLiveAircraft(row);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
   }, [aircraft.icao24, supabase]);
 
   // Fetch origin/destination from our API (proxies adsbdb.com, keyed by callsign).
@@ -170,7 +176,7 @@ export default function FlightDetailPanel({
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
               <span className="inline-block size-1 rounded-full bg-emerald-400 live-dot" />
-              <span>refresh 10s</span>
+              <span>streaming</span>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -229,13 +235,6 @@ export default function FlightDetailPanel({
           </div>
         </SignedOut>
 
-        {/* Altitude trail */}
-        <div className="pt-3 border-t border-white/10">
-          <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-2">
-            Altitude trail · last {trail.length}
-          </div>
-          <TrailChart trail={trail} />
-        </div>
       </div>
     </aside>
   );
@@ -372,44 +371,6 @@ function Stat({
   );
 }
 
-function TrailChart({ trail }: { trail: AircraftPosition[] }) {
-  if (trail.length < 2) {
-    return (
-      <div className="h-20 flex items-center justify-center text-xs text-slate-500 border border-dashed border-white/10 rounded-md">
-        collecting data…
-      </div>
-    );
-  }
-  const alts = trail.map((p) => p.altitude_m ?? 0);
-  const maxAlt = Math.max(...alts, 1);
-  const w = 300, h = 70;
-  const pts = alts
-    .map((a, i) => {
-      const x = (i / (alts.length - 1)) * w;
-      const y = h - (a / maxAlt) * h;
-      return `${x},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  const areaPts = `0,${h} ${pts} ${w},${h}`;
-  return (
-    <div className="rounded-md border border-white/10 bg-slate-900/60 p-2">
-      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="70" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="altGrad" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <polygon points={areaPts} fill="url(#altGrad)" />
-        <polyline points={pts} fill="none" stroke="#22d3ee" strokeWidth="1.5" />
-      </svg>
-      <div className="flex justify-between mt-1 text-[9px] font-mono text-slate-500">
-        <span>0 ft</span>
-        <span>peak {fmtAlt(maxAlt)}</span>
-      </div>
-    </div>
-  );
-}
 
 function fmtAlt(m: number | null): string {
   if (m == null) return "—";
