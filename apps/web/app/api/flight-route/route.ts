@@ -50,6 +50,9 @@ export async function GET(req: Request) {
   const icao24 = url.searchParams.get("icao24")?.trim().toLowerCase() ?? null;
   const callsign =
     url.searchParams.get("callsign")?.trim().toUpperCase().replace(/\s+/g, "") ?? null;
+  const lat = parseFloat(url.searchParams.get("lat") ?? "");
+  const lon = parseFloat(url.searchParams.get("lon") ?? "");
+  const pos = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 
   if (!callsign) {
     return NextResponse.json({ error: "callsign required" }, { status: 400 });
@@ -69,7 +72,7 @@ export async function GET(req: Request) {
   if (cached) {
     const age = Date.now() - new Date(cached.fetched_at).getTime();
     if (age < CACHE_TTL_MS) {
-      return NextResponse.json(formatCached(cached as CachedRoute));
+      return NextResponse.json(formatCached(cached as CachedRoute, false, pos));
     }
   }
 
@@ -80,7 +83,7 @@ export async function GET(req: Request) {
     const r = await fetch(upstream, { headers: { Accept: "application/json" } });
     if (r.ok) body = (await r.json()) as AdsbdbResponse;
   } catch {
-    if (cached) return NextResponse.json(formatCached(cached as CachedRoute, true));
+    if (cached) return NextResponse.json(formatCached(cached as CachedRoute, true, pos));
   }
 
   if (!body || body.response === "unknown callsign" || typeof body.response === "string") {
@@ -114,6 +117,7 @@ export async function GET(req: Request) {
   const fr = body.response.flightroute;
   const depInfo = toAirportInfo(fr.origin);
   const arrInfo = toAirportInfo(fr.destination);
+  const matches = pos ? positionMatchesRoute(pos, depInfo, arrInfo) : null;
   const row = {
     icao24: cacheKey,
     callsign: fr.callsign,
@@ -138,7 +142,37 @@ export async function GET(req: Request) {
     airline: fr.airline?.name ?? null,
     stale: false,
     known: true,
+    matchesCurrentPosition: matches,
   });
+}
+
+/** Great-circle distance in km between two lat/lon points. */
+function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180;
+  const la2 = (b.lat * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Sanity-check whether the plane is on the scheduled route by measuring the
+ * path-length detour: if the sum of (dep→plane + plane→arr) is more than
+ * 20 % longer than the direct dep→arr great-circle distance, the plane is
+ * materially off-path and is probably flying a different leg today.
+ */
+function positionMatchesRoute(
+  pos: { lat: number; lon: number },
+  dep: { lat: number; lon: number },
+  arr: { lat: number; lon: number }
+): boolean {
+  const direct = haversineKm(dep, arr);
+  if (direct < 100) return true; // too short to judge
+  const detour = haversineKm(dep, pos) + haversineKm(pos, arr);
+  return detour <= direct * 1.2;
 }
 
 function toAirportInfo(a: AdsbdbAirport) {
@@ -153,7 +187,19 @@ function toAirportInfo(a: AdsbdbAirport) {
   };
 }
 
-function formatCached(r: CachedRoute, stale = false) {
+function formatCached(
+  r: CachedRoute,
+  stale = false,
+  pos: { lat: number; lon: number } | null = null
+) {
+  const matches =
+    pos && r.dep_info && r.arr_info
+      ? positionMatchesRoute(
+          pos,
+          { lat: r.dep_info.lat, lon: r.dep_info.lon },
+          { lat: r.arr_info.lat, lon: r.arr_info.lon }
+        )
+      : null;
   return {
     icao24: r.icao24,
     callsign: r.callsign,
@@ -164,5 +210,6 @@ function formatCached(r: CachedRoute, stale = false) {
     airline: r.airline_name ?? null,
     stale,
     known: !!(r.dep_airport || r.arr_airport),
+    matchesCurrentPosition: matches,
   };
 }

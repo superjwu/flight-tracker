@@ -26,6 +26,7 @@ type RouteInfo = {
   airline?: string | null;
   stale: boolean;
   known: boolean;
+  matchesCurrentPosition?: boolean | null;
 };
 
 export default function FlightDetailPanel({
@@ -118,7 +119,10 @@ export default function FlightDetailPanel({
     setRoute(null);
     (async () => {
       try {
-        const qs = new URLSearchParams({ callsign, icao24: aircraft.icao24 });
+        const params: Record<string, string> = { callsign, icao24: aircraft.icao24 };
+        if (aircraft.latitude != null) params.lat = String(aircraft.latitude);
+        if (aircraft.longitude != null) params.lon = String(aircraft.longitude);
+        const qs = new URLSearchParams(params);
         const res = await fetch(`/api/flight-route?${qs}`);
         if (cancelled) return;
         if (res.ok) setRoute(await res.json());
@@ -126,6 +130,7 @@ export default function FlightDetailPanel({
       if (!cancelled) setRouteLoading(false);
     })();
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aircraft.icao24, aircraft.callsign]);
 
   return (
@@ -285,11 +290,19 @@ function RouteBlock({
   const depCode = (dep && "iata" in dep && dep.iata) || route!.dep || "—";
   const arrCode = (arr && "iata" in arr && arr.iata) || route!.arr || "—";
 
+  const offPath = route?.matchesCurrentPosition === false;
+
   return (
-    <div className="rounded-lg border border-cyan-500/20 bg-gradient-to-br from-slate-900 to-slate-900/80 p-4 shadow-inner shadow-cyan-500/5">
+    <div
+      className={`rounded-lg border p-4 shadow-inner ${
+        offPath
+          ? "border-amber-500/40 bg-gradient-to-br from-amber-950/40 to-slate-900/80 shadow-amber-500/5"
+          : "border-cyan-500/20 bg-gradient-to-br from-slate-900 to-slate-900/80 shadow-cyan-500/5"
+      }`}
+    >
       <div className="flex items-center justify-between mb-3">
-        <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-cyan-300/90">
-          Route
+        <div className={`text-[10px] font-mono uppercase tracking-[0.2em] ${offPath ? "text-amber-300/90" : "text-cyan-300/90"}`}>
+          Scheduled route
         </div>
         {route?.stale && (
           <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400/80">
@@ -314,6 +327,16 @@ function RouteBlock({
         <div className="mt-3 pt-3 border-t border-white/5 grid grid-cols-2 gap-3 text-[11px]">
           <div className="text-slate-400 truncate" title={dep?.name}>{dep?.name ?? "—"}</div>
           <div className="text-slate-400 truncate text-right" title={arr?.name}>{arr?.name ?? "—"}</div>
+        </div>
+      )}
+
+      {offPath && (
+        <div className="mt-3 pt-3 border-t border-amber-500/20 flex items-start gap-2 text-[11px] text-amber-200/90 leading-relaxed">
+          <span aria-hidden>⚠</span>
+          <span>
+            Plane is off this path. Airlines reuse callsigns across different
+            routes; today&apos;s actual flight is likely different.
+          </span>
         </div>
       )}
     </div>
