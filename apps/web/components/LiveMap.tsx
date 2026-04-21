@@ -189,14 +189,29 @@ export default function LiveMap({
             }
             const row = payload.new as AircraftState;
             if (!row || row.latitude == null || row.longitude == null) return;
-            // Only update markers that are already rendered (part of the current snapshot).
-            // Don't add or remove on realtime events — the snapshot fetch is the source of
-            // truth for which planes are visible. This avoids a race where rapid worker
-            // polls delete out-of-viewport markers before the new snapshot lands.
-            if (!statesRef.current.has(row.icao24)) return;
-            statesRef.current.set(row.icao24, row);
-            upsertMarker(row);
-            onLastUpdateChange(Date.now());
+            const bbox = getViewportBbox();
+            const inView =
+              row.longitude >= bbox.minLon &&
+              row.longitude <= bbox.maxLon &&
+              row.latitude >= bbox.minLat &&
+              row.latitude <= bbox.maxLat;
+            const known = statesRef.current.has(row.icao24);
+            if (known) {
+              // Already-rendered plane: always update position even if it has left
+              // the viewport (let the next snapshot reconcile). Don't remove here —
+              // that race caused region-switch to empty the map.
+              statesRef.current.set(row.icao24, row);
+              upsertMarker(row);
+              onLastUpdateChange(Date.now());
+              return;
+            }
+            if (inView) {
+              // New plane just entered the viewport — add it so the map stays live
+              // without requiring pan/zoom.
+              statesRef.current.set(row.icao24, row);
+              upsertMarker(row);
+              onLastUpdateChange(Date.now());
+            }
           }
         )
         .subscribe();
