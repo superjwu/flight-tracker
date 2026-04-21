@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MLMap, Marker } from "maplibre-gl";
 import type { AircraftState, Bbox } from "@flight-tracker/shared";
 import { useSupabase } from "@/lib/supabase-browser";
-import { MAP_STYLE_URL } from "@/lib/map-style";
+import { MAP_STYLE } from "@/lib/map-style";
 import { useFavorites } from "@/lib/favorites-context";
 import type { MapFilters } from "./MapShell";
 
@@ -58,7 +58,7 @@ export default function LiveMap({
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_URL,
+      style: MAP_STYLE,
       center: initialCenter,
       zoom: 2.6,
       attributionControl: { compact: true },
@@ -295,17 +295,21 @@ export default function LiveMap({
   function buildMarkerEl(a: AircraftState): HTMLElement {
     const el = document.createElement("div");
     el.className = "plane-marker";
+    // Airplane silhouette (top-down view). Nose faces +Y (up), so heading=0 means north.
     el.innerHTML = `
-      <svg viewBox="0 0 24 24" width="22" height="22" style="transform: rotate(0deg); transform-origin: center;">
-        <path d="M12 2 L14 10 L22 12 L22 14 L14 14 L13 22 L11 22 L10 14 L2 14 L2 12 L10 10 Z"
-              fill="#22d3ee" stroke="#05070b" stroke-width="0.8"/>
+      <svg viewBox="-12 -12 24 24" width="18" height="18" style="transform-origin: center;">
+        <path d="M0 -10 L1.6 -2 L10 1 L10 3 L1.6 2 L1.2 8 L3 9.5 L3 11 L0 10 L-3 11 L-3 9.5 L-1.2 8 L-1.6 2 L-10 3 L-10 1 L-1.6 -2 Z"
+              fill="#22d3ee" stroke="#0b1220" stroke-width="1" stroke-linejoin="round"/>
       </svg>
     `;
     applyMarkerState(el, a);
     return el;
   }
 
-  return <div ref={containerRef} className="absolute inset-0" />;
+  // MapLibre rewrites the container's `position` to `relative` on init, which
+  // clobbers `absolute inset-0`. Give explicit width/height so the relative
+  // container still fills its absolute-positioned parent.
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }
 
 function altitudeColor(a: AircraftState): string {

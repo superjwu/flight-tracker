@@ -25,26 +25,27 @@ export default function StatsBar({
   }, [lastUpdate]);
 
   return (
-    <div className="absolute bottom-4 left-4 z-10 flex items-center gap-4 rounded-md border border-[--color-border] bg-[--color-panel]/90 backdrop-blur px-4 py-2 shadow-lg font-mono text-xs">
-      <span className="flex items-center gap-1.5">
-        <span className="inline-block size-1.5 rounded-full bg-[--color-accent-green] live-dot" />
-        LIVE
+    <div className="absolute bottom-6 left-6 z-10 flex items-stretch gap-px overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/50 ring-1 ring-inset ring-white/5">
+      <Stat label="status" value={
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block size-1.5 rounded-full bg-emerald-400 live-dot" />
+          <span className="text-emerald-300">LIVE</span>
+        </span>
+      } />
+      <Stat label="aircraft" value={<span className="text-cyan-300">{visibleCount.toLocaleString()}</span>} />
+      <Stat label="region" value={<span className="uppercase">{region.replace("_", " ")}</span>} />
+      <Stat label="updated" value={<span className="text-slate-300">{age}</span>} />
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 bg-slate-950 px-4 py-2.5">
+      <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">
+        {label}
       </span>
-      <span className="text-[--color-muted]">·</span>
-      <span>
-        <span className="text-[--color-muted]">visible </span>
-        <span className="text-[--color-accent]">{visibleCount.toLocaleString()}</span>
-      </span>
-      <span className="text-[--color-muted]">·</span>
-      <span>
-        <span className="text-[--color-muted]">region </span>
-        <span className="uppercase">{region.replace("_", " ")}</span>
-      </span>
-      <span className="text-[--color-muted]">·</span>
-      <span>
-        <span className="text-[--color-muted]">updated </span>
-        <span>{age}</span>
-      </span>
+      <span className="font-mono text-sm font-medium text-white">{value}</span>
     </div>
   );
 }

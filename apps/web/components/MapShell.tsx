@@ -32,23 +32,35 @@ export default function MapShell() {
   const initialBbox = REGION_BBOXES[filters.region];
 
   return (
-    <main className="fixed inset-0 bg-[--color-bg]">
-      <header className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
+    <main className="fixed inset-0 bg-slate-950">
+      <header className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-5 py-4 bg-gradient-to-b from-slate-950/90 via-slate-950/50 to-transparent pointer-events-none">
         <div className="flex items-center gap-3 pointer-events-auto">
-          <Link href="/" className="flex items-center gap-2 font-mono text-sm tracking-tight">
-            <span className="inline-block size-2 rounded-full bg-[--color-accent] live-dot" />
-            <span>FLIGHT_TRACKER</span>
+          <Link
+            href="/"
+            className="flex items-center gap-2.5 rounded-full border border-white/10 bg-slate-950/90 px-4 py-2 font-mono text-xs tracking-[0.15em] shadow-xl shadow-black/40 ring-1 ring-inset ring-white/5 transition hover:border-cyan-500/40"
+          >
+            <span className="relative flex size-2">
+              <span className="absolute inset-0 rounded-full bg-cyan-400 opacity-75 animate-ping" />
+              <span className="relative size-2 rounded-full bg-cyan-400" />
+            </span>
+            <span className="text-white">FLIGHT_TRACKER</span>
           </Link>
         </div>
-        <nav className="flex items-center gap-4 text-sm text-[--color-muted] pointer-events-auto">
+        <nav className="flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/90 px-2 py-1.5 text-sm shadow-xl shadow-black/40 ring-1 ring-inset ring-white/5 pointer-events-auto">
           <SignedIn>
-            <Link href="/favorites" className="hover:text-[--color-fg]">Favorites</Link>
-            <Link href="/alerts" className="hover:text-[--color-fg]">Alerts</Link>
-            <UserButton afterSignOutUrl="/" />
+            <Link href="/favorites" className="rounded-full px-3 py-1 text-slate-300 hover:text-white hover:bg-white/5 transition">
+              Favorites
+            </Link>
+            <Link href="/alerts" className="rounded-full px-3 py-1 text-slate-300 hover:text-white hover:bg-white/5 transition">
+              Alerts
+            </Link>
+            <div className="ml-1 pl-1 border-l border-white/10">
+              <UserButton afterSignOutUrl="/" />
+            </div>
           </SignedIn>
           <SignedOut>
             <SignInButton mode="modal">
-              <button className="rounded-md border border-[--color-border] bg-[--color-panel]/80 backdrop-blur px-3 py-1.5 text-[--color-fg] hover:border-[--color-accent] hover:text-[--color-accent] transition">
+              <button className="rounded-full bg-cyan-500 text-black px-4 py-1.5 text-sm font-medium hover:bg-cyan-400 transition">
                 Sign in
               </button>
             </SignInButton>
@@ -59,15 +71,17 @@ export default function MapShell() {
       <FilterBar filters={filters} onChange={setFilters} />
       <StatsBar visibleCount={visibleCount} lastUpdate={lastUpdate} region={filters.region} />
 
-      <LiveMap
-        filters={filters}
-        initialBbox={initialBbox}
-        onSelect={setSelected}
-        selectedIcao24={selected?.icao24 ?? null}
-        onVisibleCountChange={setVisibleCount}
-        onLastUpdateChange={setLastUpdate}
-        registerBboxGetter={(fn) => { bboxGetterRef.current = fn; }}
-      />
+      <div className="absolute inset-0 z-0">
+        <LiveMap
+          filters={filters}
+          initialBbox={initialBbox}
+          onSelect={setSelected}
+          selectedIcao24={selected?.icao24 ?? null}
+          onVisibleCountChange={setVisibleCount}
+          onLastUpdateChange={setLastUpdate}
+          registerBboxGetter={(fn) => { bboxGetterRef.current = fn; }}
+        />
+      </div>
 
       <SaveViewButton getBbox={() => bboxGetterRef.current?.() ?? null} />
 
