@@ -1,3 +1,9 @@
+import dns from "node:dns";
+// Prefer IPv4 DNS results. Some container runtimes (e.g. Railway) return
+// AAAA records that aren't routable from the container, causing fetch to
+// hang for 10 s per call before falling back. This removes that stall.
+dns.setDefaultResultOrder("ipv4first");
+
 import { env } from "./env.js";
 import { fetchOpenSkyStates } from "./opensky.js";
 import { cleanupStale, upsertStates } from "./writer.js";
