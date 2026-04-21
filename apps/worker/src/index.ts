@@ -25,9 +25,12 @@ async function tick() {
     consecutiveFailures = 0;
   } catch (err) {
     consecutiveFailures += 1;
+    const e = err as Error & { cause?: unknown };
+    const causeStr = e.cause
+      ? ` | cause=${JSON.stringify(e.cause, Object.getOwnPropertyNames(e.cause as object))}`
+      : "";
     console.error(
-      `[tick ${tickCount}] FAILED (${consecutiveFailures}x):`,
-      (err as Error).message
+      `[tick ${tickCount}] FAILED (${consecutiveFailures}x): ${e.message}${causeStr}`
     );
     if (consecutiveFailures >= 10) {
       console.error("too many consecutive failures, exiting");
