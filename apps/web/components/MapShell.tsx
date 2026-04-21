@@ -30,7 +30,7 @@ export default function MapShell() {
   const [selected, setSelected] = useState<AircraftState | null>(null);
   const [visibleCount, setVisibleCount] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
-  const [theme, setThemeState] = useState<ThemeKey>("navy");
+  const [theme, setThemeState] = useState<ThemeKey>("light");
   const bboxGetterRef = useRef<(() => Bbox | null) | null>(null);
   const flyToRef = useRef<((lon: number, lat: number, zoom?: number) => void) | null>(null);
 

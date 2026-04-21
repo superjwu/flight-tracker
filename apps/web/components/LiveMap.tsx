@@ -30,7 +30,7 @@ export default function LiveMap({
   onLastUpdateChange,
   registerBboxGetter,
   registerFlyTo,
-  theme = "navy",
+  theme = "light",
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MLMap | null>(null);
