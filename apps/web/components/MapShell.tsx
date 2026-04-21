@@ -2,14 +2,16 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AircraftState, Bbox, RegionKey } from "@flight-tracker/shared";
 import { REGION_BBOXES } from "@flight-tracker/shared";
+import type { ThemeKey } from "@/lib/map-style";
 import FilterBar from "./FilterBar";
 import FlightDetailPanel from "./FlightDetailPanel";
 import SaveViewButton from "./SaveViewButton";
 import SearchBox, { type SearchHit } from "./SearchBox";
 import StatsBar from "./StatsBar";
+import ThemeMenu from "./ThemeMenu";
 
 const LiveMap = dynamic(() => import("./LiveMap"), { ssr: false });
 
@@ -28,8 +30,21 @@ export default function MapShell() {
   const [selected, setSelected] = useState<AircraftState | null>(null);
   const [visibleCount, setVisibleCount] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const [theme, setThemeState] = useState<ThemeKey>("navy");
   const bboxGetterRef = useRef<(() => Bbox | null) | null>(null);
   const flyToRef = useRef<((lon: number, lat: number, zoom?: number) => void) | null>(null);
+
+  // Hydrate theme from localStorage once on mount (avoids SSR mismatch).
+  useEffect(() => {
+    const saved = typeof window !== "undefined"
+      ? (localStorage.getItem("ft-map-theme") as ThemeKey | null)
+      : null;
+    if (saved) setThemeState(saved);
+  }, []);
+  function setTheme(t: ThemeKey) {
+    setThemeState(t);
+    try { localStorage.setItem("ft-map-theme", t); } catch {}
+  }
 
   function handleSearchPick(hit: SearchHit) {
     if (hit.longitude == null || hit.latitude == null) return;
@@ -104,10 +119,12 @@ export default function MapShell() {
           onLastUpdateChange={setLastUpdate}
           registerBboxGetter={(fn) => { bboxGetterRef.current = fn; }}
           registerFlyTo={(fn) => { flyToRef.current = fn; }}
+          theme={theme}
         />
       </div>
 
       <SaveViewButton getBbox={() => bboxGetterRef.current?.() ?? null} />
+      <ThemeMenu theme={theme} onChange={setTheme} />
 
       {selected && (
         <FlightDetailPanel

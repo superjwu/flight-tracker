@@ -48,10 +48,12 @@ function scheduleNext(delay: number) {
 
 console.log(
   `flight-tracker worker starting | interval=${env.POLL_INTERVAL_MS}ms ` +
-    `cleanupEvery=${env.CLEANUP_EVERY}`
+    `cleanupEvery=${env.CLEANUP_EVERY} startupDelay=${env.STARTUP_DELAY_MS}ms`
 );
 
-scheduleNext(0);
+// Startup delay avoids hammering OpenSky when the process restarts repeatedly
+// (e.g. tsx watch in dev). Without this, rapid file saves can rack up 429s.
+scheduleNext(env.STARTUP_DELAY_MS);
 
 process.on("SIGINT", () => { console.log("SIGINT"); process.exit(0); });
 process.on("SIGTERM", () => { console.log("SIGTERM"); process.exit(0); });

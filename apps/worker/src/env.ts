@@ -9,9 +9,11 @@ function required(name: string): string {
 export const env = {
   SUPABASE_URL: required("SUPABASE_URL"),
   SUPABASE_SERVICE_ROLE_KEY: required("SUPABASE_SERVICE_ROLE_KEY"),
-  POLL_INTERVAL_MS: Number(process.env.POLL_INTERVAL_MS ?? 10_000),
-  POSITION_SAMPLE_EVERY: Number(process.env.POSITION_SAMPLE_EVERY ?? 3),
-  CLEANUP_EVERY: Number(process.env.CLEANUP_EVERY ?? 30),
+  // Anonymous OpenSky is heavily rate-limited (~100/day as of 2024). 15s cadence
+  // stays inside the limit while keeping data fresh. Drop to 10s only with creds.
+  POLL_INTERVAL_MS: Number(process.env.POLL_INTERVAL_MS ?? 15_000),
+  CLEANUP_EVERY: Number(process.env.CLEANUP_EVERY ?? 20),
+  STARTUP_DELAY_MS: Number(process.env.STARTUP_DELAY_MS ?? 8_000),
   OPENSKY_USERNAME: process.env.OPENSKY_USERNAME ?? "",
   OPENSKY_PASSWORD: process.env.OPENSKY_PASSWORD ?? "",
 };

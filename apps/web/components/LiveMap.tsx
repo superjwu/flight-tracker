@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MLMap, Marker } from "maplibre-gl";
 import type { AircraftState, Bbox } from "@flight-tracker/shared";
 import { useSupabase } from "@/lib/supabase-browser";
-import { MAP_STYLE } from "@/lib/map-style";
+import { buildStyle, type ThemeKey } from "@/lib/map-style";
 import { useFavorites } from "@/lib/favorites-context";
 import type { MapFilters } from "./MapShell";
 
@@ -16,6 +16,7 @@ type Props = {
   onLastUpdateChange: (ts: number) => void;
   registerBboxGetter?: (fn: () => Bbox | null) => void;
   registerFlyTo?: (fn: (lon: number, lat: number, zoom?: number) => void) => void;
+  theme?: ThemeKey;
 };
 
 const MIN_RELOAD_INTERVAL_MS = 1500;
@@ -29,6 +30,7 @@ export default function LiveMap({
   onLastUpdateChange,
   registerBboxGetter,
   registerFlyTo,
+  theme = "navy",
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MLMap | null>(null);
@@ -61,7 +63,7 @@ export default function LiveMap({
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE,
+      style: buildStyle(theme),
       center: initialCenter,
       zoom: 2.6,
       attributionControl: { compact: true },
@@ -105,6 +107,15 @@ export default function LiveMap({
     };
     // only init once
   }, [initialCenter]);
+
+  // Swap map style when the user picks a new theme. MapLibre preserves
+  // camera + sources across setStyle, but DOM markers (our planes) are
+  // unaffected since they live outside the GL layers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    map.setStyle(buildStyle(theme));
+  }, [theme, ready]);
 
   // Pan to region when filter changes and force a re-fetch when pan completes
   // (moveend throttle could otherwise skip the reload and leave the map empty).
