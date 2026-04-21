@@ -14,6 +14,9 @@ export const env = {
   POLL_INTERVAL_MS: Number(process.env.POLL_INTERVAL_MS ?? 900_000),
   CLEANUP_EVERY: Number(process.env.CLEANUP_EVERY ?? 4),
   STARTUP_DELAY_MS: Number(process.env.STARTUP_DELAY_MS ?? 30_000),
+  OPENSKY_CLIENT_ID: process.env.OPENSKY_CLIENT_ID ?? "",
+  OPENSKY_CLIENT_SECRET: process.env.OPENSKY_CLIENT_SECRET ?? "",
+  // Legacy basic-auth fallback, still works for grandfathered accounts.
   OPENSKY_USERNAME: process.env.OPENSKY_USERNAME ?? "",
   OPENSKY_PASSWORD: process.env.OPENSKY_PASSWORD ?? "",
 };

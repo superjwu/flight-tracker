@@ -33,18 +33,57 @@ type OpenSkyResponse = {
   states: RawStateVector[] | null;
 };
 
-const ENDPOINT = "https://opensky-network.org/api/states/all";
+const API_ENDPOINT = "https://opensky-network.org/api/states/all";
+const TOKEN_ENDPOINT =
+  "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+
+type CachedToken = { accessToken: string; expiresAt: number };
+let tokenCache: CachedToken | null = null;
+
+async function getBearerToken(): Promise<string | null> {
+  if (!env.OPENSKY_CLIENT_ID || !env.OPENSKY_CLIENT_SECRET) return null;
+
+  // Re-use while valid, refresh 60s before expiry.
+  if (tokenCache && Date.now() < tokenCache.expiresAt - 60_000) {
+    return tokenCache.accessToken;
+  }
+
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: env.OPENSKY_CLIENT_ID,
+    client_secret: env.OPENSKY_CLIENT_SECRET,
+  });
+
+  const res = await fetch(TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!res.ok) {
+    throw new Error(`OpenSky token ${res.status} ${res.statusText}`);
+  }
+  const payload = (await res.json()) as { access_token: string; expires_in: number };
+  tokenCache = {
+    accessToken: payload.access_token,
+    expiresAt: Date.now() + payload.expires_in * 1000,
+  };
+  return tokenCache.accessToken;
+}
 
 export async function fetchOpenSkyStates(): Promise<AircraftState[]> {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (env.OPENSKY_USERNAME && env.OPENSKY_PASSWORD) {
+
+  const bearer = await getBearerToken();
+  if (bearer) {
+    headers.Authorization = `Bearer ${bearer}`;
+  } else if (env.OPENSKY_USERNAME && env.OPENSKY_PASSWORD) {
     const basic = Buffer.from(
       `${env.OPENSKY_USERNAME}:${env.OPENSKY_PASSWORD}`
     ).toString("base64");
     headers.Authorization = `Basic ${basic}`;
   }
 
-  const res = await fetch(ENDPOINT, { headers });
+  const res = await fetch(API_ENDPOINT, { headers });
   if (!res.ok) {
     throw new Error(`OpenSky HTTP ${res.status} ${res.statusText}`);
   }
