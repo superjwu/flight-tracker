@@ -20,6 +20,18 @@ type Props = {
 };
 
 const MIN_RELOAD_INTERVAL_MS = 1500;
+const PROJECTION_TICK_MS = 500;
+const PROJECTION_STALE_MS = 120_000;
+const METERS_PER_DEG_LAT = 111_320;
+
+type Anchor = {
+  lon: number;
+  lat: number;
+  velocityMs: number;
+  headingDeg: number;
+  anchorMs: number;
+  onGround: boolean;
+};
 
 export default function LiveMap({
   filters,
@@ -36,6 +48,7 @@ export default function LiveMap({
   const mapRef = useRef<MLMap | null>(null);
   const markersRef = useRef<Map<string, Marker>>(new Map());
   const statesRef = useRef<Map<string, AircraftState>>(new Map());
+  const anchorsRef = useRef<Map<string, Anchor>>(new Map());
   const supabase = useSupabase();
   const { favoriteCallsigns, favoriteAirlines } = useFavorites();
   const [ready, setReady] = useState(false);
@@ -168,14 +181,22 @@ export default function LiveMap({
       });
       if (error || cancelled) return;
       const next = new Map<string, AircraftState>();
-      for (const row of (data ?? []) as AircraftState[]) next.set(row.icao24, row);
+      for (const row of (data ?? []) as AircraftState[]) {
+        next.set(row.icao24, row);
+        setAnchor(row);
+      }
       statesRef.current = next;
       // Clear markers not in the new snapshot (pre-empt realtime removal race)
       for (const [icao, marker] of markersRef.current) {
         if (!next.has(icao)) {
           marker.remove();
           markersRef.current.delete(icao);
+          anchorsRef.current.delete(icao);
         }
+      }
+      // Drop anchors for planes no longer in the snapshot (regardless of marker state).
+      for (const icao of anchorsRef.current.keys()) {
+        if (!next.has(icao)) anchorsRef.current.delete(icao);
       }
       renderAll();
       onLastUpdateChange(Date.now());
@@ -212,6 +233,7 @@ export default function LiveMap({
               // the viewport (let the next snapshot reconcile). Don't remove here —
               // that race caused region-switch to empty the map.
               statesRef.current.set(row.icao24, row);
+              setAnchor(row);
               upsertMarker(row);
               onLastUpdateChange(Date.now());
               return;
@@ -220,6 +242,7 @@ export default function LiveMap({
               // New plane just entered the viewport — add it so the map stays live
               // without requiring pan/zoom.
               statesRef.current.set(row.icao24, row);
+              setAnchor(row);
               upsertMarker(row);
               onLastUpdateChange(Date.now());
             }
@@ -253,6 +276,38 @@ export default function LiveMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, favoriteCallsigns, favoriteAirlines, selectedIcao24, ready]);
 
+  // Dead-reckoning tick: project each marker forward from its last-known
+  // anchor using velocity + heading, so planes glide smoothly between the
+  // 10s realtime updates instead of snapping.
+  useEffect(() => {
+    if (!ready) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      for (const [icao, anchor] of anchorsRef.current) {
+        const marker = markersRef.current.get(icao);
+        if (!marker) continue;
+        const dtSec = (now - anchor.anchorMs) / 1000;
+        if (
+          anchor.onGround ||
+          anchor.velocityMs <= 0 ||
+          dtSec <= 0 ||
+          dtSec > PROJECTION_STALE_MS / 1000
+        ) {
+          continue;
+        }
+        const hRad = (anchor.headingDeg * Math.PI) / 180;
+        const distM = anchor.velocityMs * dtSec;
+        const dLat = (distM * Math.cos(hRad)) / METERS_PER_DEG_LAT;
+        const cosLat = Math.cos((anchor.lat * Math.PI) / 180);
+        const dLon = cosLat > 1e-6
+          ? (distM * Math.sin(hRad)) / (METERS_PER_DEG_LAT * cosLat)
+          : 0;
+        marker.setLngLat([anchor.lon + dLon, anchor.lat + dLat]);
+      }
+    }, PROJECTION_TICK_MS);
+    return () => clearInterval(id);
+  }, [ready]);
+
   function matchesFilters(a: AircraftState): boolean {
     const f = filtersRef.current;
     if (f.favoritesOnly) {
@@ -275,6 +330,19 @@ export default function LiveMap({
       m.remove();
       markersRef.current.delete(icao);
     }
+    anchorsRef.current.delete(icao);
+  }
+
+  function setAnchor(a: AircraftState) {
+    if (a.longitude == null || a.latitude == null) return;
+    anchorsRef.current.set(a.icao24, {
+      lon: a.longitude,
+      lat: a.latitude,
+      velocityMs: a.velocity_ms ?? 0,
+      headingDeg: a.heading_deg ?? 0,
+      anchorMs: a.last_contact ? Date.parse(a.last_contact) : Date.now(),
+      onGround: a.on_ground,
+    });
   }
 
   function upsertMarker(a: AircraftState) {
@@ -289,7 +357,9 @@ export default function LiveMap({
 
     const existing = markersRef.current.get(a.icao24);
     if (existing) {
-      existing.setLngLat([a.longitude, a.latitude]);
+      // Position is driven by the projection tick from the anchor we just set.
+      // Snapping to the raw (seconds-stale) lon/lat here would cause a visible
+      // backward jump each realtime update before the next tick re-projects.
       const el = existing.getElement();
       applyMarkerState(el, a);
       return;
