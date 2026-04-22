@@ -43,7 +43,8 @@ export default function FlightDetailPanel({
   const [liveAircraft, setLiveAircraft] = useState<AircraftState>(aircraft);
   const [firstSeenAt] = useState<number>(() => Date.now());
   const [route, setRoute] = useState<RouteInfo | null>(null);
-  const [routeLoading, setRouteLoading] = useState(true);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   const airline = lookupAirline(liveAircraft.callsign);
   const cs = (liveAircraft.callsign ?? "").toUpperCase();
@@ -106,32 +107,38 @@ export default function FlightDetailPanel({
     };
   }, [aircraft.icao24, supabase]);
 
-  // Fetch origin/destination from our API (proxies adsbdb.com, keyed by callsign).
+  // Route lookup is user-triggered via the "Look up scheduled route" button
+  // below. Scheduled-route data from adsbdb is based on historical callsign
+  // assignments, which airlines often reshuffle across different legs —
+  // auto-fetching would display wrong routes by default. Clear state when
+  // the selected aircraft changes so we don't leak route from a prior click.
   useEffect(() => {
-    const callsign = (aircraft.callsign ?? "").trim();
+    setRoute(null);
+    setRouteError(null);
+    setRouteLoading(false);
+  }, [aircraft.icao24]);
+
+  async function lookupRoute() {
+    const callsign = (liveAircraft.callsign ?? "").trim();
     if (!callsign) {
-      setRoute(null);
-      setRouteLoading(false);
+      setRouteError("No callsign to look up.");
       return;
     }
-    let cancelled = false;
     setRouteLoading(true);
-    setRoute(null);
-    (async () => {
-      try {
-        const params: Record<string, string> = { callsign, icao24: aircraft.icao24 };
-        if (aircraft.latitude != null) params.lat = String(aircraft.latitude);
-        if (aircraft.longitude != null) params.lon = String(aircraft.longitude);
-        const qs = new URLSearchParams(params);
-        const res = await fetch(`/api/flight-route?${qs}`);
-        if (cancelled) return;
-        if (res.ok) setRoute(await res.json());
-      } catch {}
-      if (!cancelled) setRouteLoading(false);
-    })();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aircraft.icao24, aircraft.callsign]);
+    setRouteError(null);
+    try {
+      const params: Record<string, string> = { callsign, icao24: aircraft.icao24 };
+      if (liveAircraft.latitude != null) params.lat = String(liveAircraft.latitude);
+      if (liveAircraft.longitude != null) params.lon = String(liveAircraft.longitude);
+      const res = await fetch(`/api/flight-route?${new URLSearchParams(params)}`);
+      if (!res.ok) throw new Error(`lookup failed (${res.status})`);
+      setRoute(await res.json());
+    } catch (err) {
+      setRouteError((err as Error).message);
+    } finally {
+      setRouteLoading(false);
+    }
+  }
 
   return (
     <aside className="absolute top-0 right-0 bottom-0 z-30 w-full max-w-[380px] border-l border-white/10 bg-slate-950/98 backdrop-blur-md overflow-y-auto shadow-2xl shadow-black/60">
@@ -154,8 +161,32 @@ export default function FlightDetailPanel({
       </div>
 
       <div className="p-5 space-y-5">
-        {/* Route */}
-        <RouteBlock route={route} loading={routeLoading} dep={depInfo} arr={arrInfo} />
+        {/* Scheduled route — lazy lookup */}
+        {route ? (
+          <RouteBlock route={route} loading={false} dep={depInfo} arr={arrInfo} />
+        ) : (
+          <div className="rounded-lg border border-white/10 bg-slate-900/60 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
+                Scheduled route
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed mb-3">
+              Based on callsign in adsbdb — airlines reuse flight numbers so
+              the scheduled origin / destination may not match today's flight.
+            </p>
+            <button
+              onClick={lookupRoute}
+              disabled={routeLoading || !(liveAircraft.callsign ?? "").trim()}
+              className="w-full rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-400/50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {routeLoading ? "Looking up…" : "Look up scheduled route"}
+            </button>
+            {routeError && (
+              <p className="mt-2 text-[11px] text-amber-400">{routeError}</p>
+            )}
+          </div>
+        )}
 
         {/* Airline */}
         {airline && (
